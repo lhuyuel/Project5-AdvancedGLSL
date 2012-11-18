@@ -29,22 +29,53 @@ mat3 eastNorthUpToEyeCoordinates(vec3 positionMC, vec3 normalEC);
 
 void main(void)
 {
-    vec3 normal = normalize(v_Normal);            // surface normal - normalized after rasterization
-    vec3 eyeToPosition = normalize(v_Position);   // normalized eye-to-position vector in camera coordinates
+
+	vec3 normal = normalize(v_Normal); // surface normal - normalized after rasterization
+    vec3 eyeToPosition = normalize(v_Position); // normalized eye-to-position vector in camera coordinates
+
+	//==========================================Bump map=====================================
+	float center = texture2D( u_Bump, v_Texcoord );
+	float right = texture2D( u_Bump, v_Texcoord + vec2(1.0/1000.0, 0.0) );
+	float top = texture2D( u_Bump, v_Texcoord + vec2(0.0, 1.0/500.0) );
+
+	vec3 perturbedNorm = normalize( vec3(center - right, center - top, 0.2) );
+	vec3 bumpNorm = normalize(eastNorthUpToEyeCoordinates(v_positionMC, normal)* perturbedNorm);
+
+    float BumpDiffuse = max( dot(u_CameraSpaceDirLight, bumpNorm), 0.0 );
+
+    vec3 toReflectedLight = reflect(-u_CameraSpaceDirLight, normal);
+
+	float earthFlag = length(vec3(texture2D(u_EarthSpec, v_Texcoord)));
+    //==================================== Specular =========================================
+	float specular;
+	if( earthFlag > 0.01)	specular = max(dot(toReflectedLight, -eyeToPosition), 0.0);
+	else	specular = 0;
+    
+	specular = pow(specular, 20.0) * texture2D(u_EarthSpec, v_Texcoord);
+	
+	float gammaCorrect = 1/2.0; //gamma correct by 1/1.8
+	
+	vec4 dayColor = ((0.6 * BumpDiffuse) + (0.4 * specular)) * texture2D(u_DayDiffuse, v_Texcoord);
+	vec4 nightColor = pow(texture2D(u_Night, v_Texcoord),gammaCorrect); //apply gamma correction to nighttime texture
+
+	//====================================== Add Clouds========================================
+	vec2 cloudCoord = v_Texcoord + vec2( u_time, 0.0 );
+	float cloudTransmitance = texture2D(u_CloudTrans,cloudCoord);
 
     float diffuse = max(dot(u_CameraSpaceDirLight, normal), 0.0);
 
-    vec3 toReflectedLight = reflect(-u_CameraSpaceDirLight, normal);
-    float specular = max(dot(toReflectedLight, -eyeToPosition), 0.0);
-    specular = pow(specular, 20.0);
+	dayColor = mix( (0.6 * diffuse)*texture2D(u_Cloud,cloudCoord), dayColor, cloudTransmitance );
+	nightColor = mix( vec4( 0.0 ), nightColor, cloudTransmitance);
+	
+	//===================================== Rim lighting ========================================
+	float rimFactor = dot(v_Normal, v_Position) + 1;
+	vec4 rimClr = vec4( 0.0 );
+	if( rimFactor > 0 )
+		rimClr = vec4(rimFactor/4, rimFactor/2, rimFactor/2, 1.0);
 
-    float gammaCorrect = 1/1.8; //gamma correct by 1/1.8
-
-    vec4 dayColor = texture2D(u_DayDiffuse, v_Texcoord);
-    vec4 nightColor = pow(texture2D(u_Night, v_Texcoord),gammaCorrect);    //apply gamma correction to nighttime texture
-
-    gl_FragColor = ((0.6 * diffuse) + (0.4 * specular)) * dayColor;
+	gl_FragColor = rimClr + mix( dayColor, nightColor, pow(1.0 - diffuse, 3.0) );
 }
+
 
 mat3 eastNorthUpToEyeCoordinates(vec3 positionMC, vec3 normalEC)
 {

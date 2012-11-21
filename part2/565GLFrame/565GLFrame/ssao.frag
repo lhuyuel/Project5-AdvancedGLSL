@@ -95,15 +95,31 @@ float getRandomScalar(vec2 texcoords) {
 float gatherOcclusion( vec3 pt_normal,
 	vec3 pt_position,
 	vec3 occluder_normal,
-	vec3 occluder_position) {
-	return -1.0f;///IMPLEMENT THIS
+	vec3 occluder_position) 
+{
+		float distance =  length( occluder_position - pt_position );
+		float overhead = dot( pt_normal, normalize( occluder_position - pt_position ) );
+		float planar = 1.0 - abs( dot( pt_normal, occluder_normal ) );
+		return planar*max( 0.0, overhead )*( 1.0/(1.0 + distance) ) ; 
 }
 
 const float REGULAR_SAMPLE_STEP = 0.012f;
 float occlusionWithRegularSamples(vec2 texcoord, 
 	vec3 position,
-    vec3 normal) {
-	return -1.0f; //IMPLEMENT THIS
+    vec3 normal) 
+{
+	float accumOcclusion = 0.0;
+	for( float i = -0.5; i <= 0.5; i += 0.25 )
+	{
+		for( float j = -0.5; j <= 0.5; j += 0.25 )
+		{
+			vec2 occludePos = texcoord + vec2( i, j )*REGULAR_SAMPLE_STEP;
+			vec3 occPos = samplePos(occludePos);
+			vec3 occNorm = normalize( sampleNrm(occludePos) );
+			accumOcclusion += gatherOcclusion( normalize(normal), position, occNorm, occPos ) ;
+		}
+	}
+	return ( accumOcclusion/16.0 ); 
 }
 
 
@@ -131,8 +147,21 @@ vec2 poissonDisk[NUM_SS_SAMPLES] = vec2[](
 const float SS_RADIUS = 0.02f;
 float occlusionWithPoissonSSSamples(vec2 texcoord, 
 	vec3 position,
-    vec3 normal) {
-	return -1.0f; //IMPLEMENT THIS
+    vec3 normal) 
+{
+	float accumOcclusion = 0;
+	float angle = getRandomScalar(texcoord) *6.2831;
+	mat2 forPos = mat2( cos(angle), sin(angle) ,
+						-sin(angle), cos(angle)  );
+	
+	for( int i = 0; i < NUM_SS_SAMPLES; ++i )
+	{
+		vec2 occludePos = texcoord + forPos*SS_RADIUS*poissonDisk[i];
+		vec3 occPos = samplePos(occludePos);
+		vec3 occNorm = normalize( sampleNrm(occludePos) );
+		accumOcclusion += gatherOcclusion( normalize(normal), position, occNorm, occPos );
+	}
+	return ( accumOcclusion/NUM_SS_SAMPLES ); 
 }
 
 
@@ -161,8 +190,25 @@ vec3 poissonSphere[NUM_WS_SAMPLES] = vec3[](
 const float SPHERE_RADIUS = 0.3f;
 float occlusionWithWorldSpaceSamples(vec2 texcoord,
 	vec3 position,
-	vec3 normal) {
-	return -1.0f; //IMPLEMENT THIS
+	vec3 normal) 
+{
+	float accumOcclusion = 0;
+	vec3 reflectNorm = getRandomNormal( texcoord );
+
+	for( int i = 0; i < NUM_SS_SAMPLES; ++i )
+	{
+		vec3 samplePoint = reflect( poissonSphere[i]*SPHERE_RADIUS, reflectNorm );
+		samplePoint = position + samplePoint*sign( dot(samplePoint,normal) );
+		vec4 p = u_Persp*vec4( samplePoint, 1.0 );
+		
+		p = (p/p.w)/2 + 0.5;
+		vec2 occludePos = p.xy;
+		vec3 occPos = samplePos(occludePos);
+		vec3 occNorm = normalize( sampleNrm(occludePos) );
+		accumOcclusion += gatherOcclusion( normalize(normal), position, occNorm, occPos );
+	}
+	return accumOcclusion/NUM_SS_SAMPLES;
+
 }
 
 //////////////////////////////////////

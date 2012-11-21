@@ -28,6 +28,7 @@ static GLuint lambert_prog;
 static GLuint blinnphong_prog;
 static GLuint fresnel_prog;
 static GLuint globe_prog;
+static GLuint moon_prog;
 
 static GLuint daydiffuse_tex;
 static GLuint night_tex;
@@ -35,12 +36,32 @@ static GLuint cloud_tex;
 static GLuint cloudtrans_tex;
 static GLuint earthspec_tex;
 static GLuint disp_tex;
+static GLuint moon_tex;
 
 static const int LONGITUDE_DIVISIONS = 75;
 static const int LATITUDE_DIVISIONS = 75;
 static const int NUM_LONGITUDE_PTS = LONGITUDE_DIVISIONS + 1;
 static const int NUM_LATITUDE_PTS = LATITUDE_DIVISIONS + 1;
 static const float RADIUS = 1;
+
+
+
+float moonAngle=0.0;
+float orbitDelta=0.05;
+float slow_orbit=0.0;
+vec3 MoonEarthTranslation=vec3(0.0f,-10.0f,0.0f);
+vec3 moonScale=vec3(0.25f,0.25f,0.25f);
+
+mat4 moon()
+{
+	mat4 trans=glm::translate(mat4(), MoonEarthTranslation);
+	mat4 scale=glm::scale(mat4(), moonScale);
+	moonAngle += orbitDelta;
+	if (moonAngle >= 360.0f) moonAngle = 0.0f;
+	vec3 axis(0.0f,0.0f,1.0f);
+	mat4 orbit = glm::rotate(mat4(), moonAngle, axis);
+	return  scale*orbit*trans;
+}
 
 //r theta phi
 vec3 computeSpherical(vec2 uv, float radius) {
@@ -257,6 +278,8 @@ void display(void)
     glClearColor(0.0f,0.0f,0.0f,1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+	current_prog = globe_prog;
+	glUseProgram(current_prog);
 	glBindVertexArray(current_mesh.vertex_array);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, current_mesh.vbo_indices);
 
@@ -278,7 +301,24 @@ void display(void)
 	glDrawElements(GL_TRIANGLES, current_mesh.num_indices, GL_UNSIGNED_SHORT,0);
 
 	glBindVertexArray(0);
-    glutPostRedisplay();
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,0);
+
+
+	glBindVertexArray(current_mesh.vertex_array);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, current_mesh.vbo_indices);
+	current_prog = moon_prog;
+	glUseProgram(current_prog);
+
+	mat4 moonModel=moon()*update_rotation();
+	mat4 moonInverseTrans = transpose(inverse(view*moonModel));
+	glUniformMatrix4fv(glGetUniformLocation(current_prog,"u_Model"),1,GL_FALSE,&moonModel[0][0]);
+	glUniformMatrix4fv(glGetUniformLocation(current_prog,"u_View"),1,GL_FALSE,&view[0][0]);
+	glUniformMatrix4fv(glGetUniformLocation(current_prog,"u_Persp"),1,GL_FALSE,&persp[0][0]);
+	glUniformMatrix4fv(glGetUniformLocation(current_prog,"u_InvTrans") ,1,GL_FALSE,&moonInverseTrans[0][0]);
+	glDrawElements(GL_TRIANGLES, current_mesh.num_indices, GL_UNSIGNED_SHORT,0);
+
+	glBindVertexArray(0);
+	glutPostRedisplay();
 	glutSwapBuffers();
 }
 
@@ -289,13 +329,16 @@ void reshape(int w, int h)
 
 void initGlobeShader() {
 	globe_prog = initShader("vs.glsl", "fs.glsl",NULL,NULL,0);
+	moon_prog = initShader("vs.glsl", "fs.glsl",NULL,NULL,0);
 	daydiffuse_tex = (unsigned int)SOIL_load_OGL_texture("earthmap1k.jpg",0,0,0);
 	night_tex = (unsigned int)SOIL_load_OGL_texture("earthlights1k.jpg",0,0,0);
 	cloud_tex = (unsigned int)SOIL_load_OGL_texture("earthcloudmap.jpg",0,0,0);
     cloudtrans_tex = (unsigned int)SOIL_load_OGL_texture("earthcloudmaptrans.jpg",0,0,0);
 	earthspec_tex = (unsigned int) SOIL_load_OGL_texture("earthspec1k.jpg",0,0,0);
-disp_tex = (unsigned int) SOIL_load_OGL_texture("earthbump1k.jpg",0,0,0);
-   	glBindTexture(GL_TEXTURE_2D, cloudtrans_tex);
+	disp_tex = (unsigned int) SOIL_load_OGL_texture("earthbump1k.jpg",0,0,0);
+   	moon_tex = (unsigned int)SOIL_load_OGL_texture("moonmap1k.jpg",0,0,0);
+
+	glBindTexture(GL_TEXTURE_2D, cloudtrans_tex);
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glBindTexture(GL_TEXTURE_2D, 0);
    	glBindTexture(GL_TEXTURE_2D, cloud_tex);
